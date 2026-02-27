@@ -23,8 +23,5 @@
       "maxDuration": 10,
       "excludeFiles": "{api/tests/**,**/*.test.py,**/test_*.py,api/tests/fixtures/**,**/__pycache__/**,**/*.pyc}"
     }
-  },
-  "env": {
-    "DEEPSEEK_API_KEY": "@deepseek-api-key"
   }
 }
