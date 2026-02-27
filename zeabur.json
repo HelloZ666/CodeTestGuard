@@ -1,18 +1,37 @@
 {
   "$schema": "https://zeabur.com/zeabur-config-schema.json",
-  "build": {
-    "node": "18"
-  },
   "services": {
+    "api": {
+      "build": {
+        "cmd": ["pip", "install", "-r", "requirements.txt"],
+        "workdir": "."
+      },
+      "deploy": {
+        "command": ["python", "-m", "uvicorn", "api.index:app", "--host", "0.0.0.0", "--port", "8000"],
+        "targetPort": 8000,
+        "healthCheck": {
+          "path": "/api/health",
+          "initialDelaySeconds": 30,
+          "periodSeconds": 10
+        }
+      },
+      "env": {
+        "PYTHONPATH": ".",
+        "DEEPSEEK_API_KEY": {
+          "dynamic": true,
+          "description": "DeepSeek API Key"
+        }
+      }
+    },
     "frontend": {
       "build": {
-        "cmd": ["npm", "run", "build"],
+        "cmd": ["npm", "install", "&&", "npm", "run", "build"],
         "workdir": "."
       },
       "output": ["dist"],
       "deploy": {
-        "command": ["npm", "run", "dev"],
-        "targetPort": 5173,
+        "command": ["npx", "vite", "preview", "--port", "3000", "--host"],
+        "targetPort": 3000,
         "healthCheck": {
           "path": "/",
           "initialDelaySeconds": 10,
@@ -23,29 +42,6 @@
         "VITE_API_URL": {
           "dynamic": true,
           "description": "API 后端地址"
-        }
-      }
-    },
-    "api": {
-      "build": {
-        "cmd": ["pip", "install", "-r", "requirements.txt"],
-        "workdir": "."
-      },
-      "source": "api",
-      "deploy": {
-        "command": ["uvicorn", "index:app", "--host", "0.0.0.0", "--port", "8000"],
-        "targetPort": 8000,
-        "healthCheck": {
-          "path": "/api/health",
-          "initialDelaySeconds": 15,
-          "periodSeconds": 10
-        }
-      },
-      "env": {
-        "PYTHONPATH": ".",
-        "DEEPSEEK_API_KEY": {
-          "dynamic": true,
-          "description": "DeepSeek API Key"
         }
       }
     }
