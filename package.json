@@ -10,6 +10,25 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "deploy:vercel": "vercel --prod",
+    "deploy:zeabur": "zeabur deploy",
+    "docker:build": "docker build -t codetestguard .",
+    "docker:run": "docker run -p 8000:8000 -e DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY codetestguard",
+    "docker:compose:up": "docker-compose up -d",
+    "docker:compose:down": "docker-compose down"
+  },
+  "name": "codetestguard",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {

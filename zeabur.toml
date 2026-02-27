@@ -1,0 +1,29 @@
+# Zeabur Configuration
+# https://zeabur.com/docs/deploy/config
+
+[build]
+  builder = "multirange"
+
+[build.runtimes]
+  node = "18"
+  python = "3.11"
+
+[[service]]
+  name = "api"
+  path = "api"
+  build-command = "pip install -r requirements.txt"
+  start-command = "uvicorn index:app --host 0.0.0.0 --port 8000"
+  port = 8000
+  
+[service.env]
+  PYTHONPATH = "."
+
+[[service]]
+  name = "frontend"
+  build-command = "npm install && npm run build"
+  output = "dist"
+  start-command = "npm run preview"
+  port = 4173
+
+[service.env]
+  VITE_API_URL = "https://your-project.zeabur.app/api"
