@@ -1,9 +1,0 @@
-[build-system]
-requires = ["setuptools>=45", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "codetestguard"
-version = "1.0.0"
-description = "Code Test Guard API"
-requires-python = ">=3.11"

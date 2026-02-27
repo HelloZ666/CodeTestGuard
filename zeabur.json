@@ -3,11 +3,11 @@
   "services": {
     "api": {
       "build": {
-        "cmd": ["pip", "install", "-e", "."],
+        "cmd": ["pip", "install", "-r", "requirements.txt"],
         "workdir": "."
       },
       "deploy": {
-        "command": ["python", "-m", "uvicorn", "api.index:app", "--host", "0.0.0.0", "--port", "8000"],
+        "command": ["python", "-m", "uvicorn", "index:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "api"],
         "targetPort": 8000,
         "healthCheck": {
           "path": "/api/health",
