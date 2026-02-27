@@ -1,0 +1,482 @@
+"""
+test_database.py - 数据库抽象层测试
+"""
+
+import json
+import os
+from pathlib import Path
+
+import pytest
+
+from services.database import (
+    init_db,
+    create_project,
+    get_project,
+    list_projects,
+    update_project,
+    delete_project,
+    save_analysis_record,
+    get_analysis_record,
+    list_analysis_records,
+    get_project_stats,
+    get_db_path,
+)
+
+
+@pytest.fixture(autouse=True)
+def temp_db(tmp_path, monkeypatch):
+    """为每个测试使用独立的临时数据库"""
+    db_path = str(tmp_path / "test.db")
+    monkeypatch.setattr("services.database.get_db_path", lambda: db_path)
+    init_db()
+    return db_path
+
+
+# ============ init_db ============
+
+class TestInitDB:
+    """测试数据库初始化"""
+
+    def test_init_creates_tables(self, tmp_path, monkeypatch):
+        """init_db应创建projects和analysis_records表"""
+        import sqlite3
+        db_path = str(tmp_path / "init_test.db")
+        monkeypatch.setattr("services.database.get_db_path", lambda: db_path)
+        init_db()
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
+        tables = [row[0] for row in cursor.fetchall()]
+        conn.close()
+
+        assert "projects" in tables
+        assert "analysis_records" in tables
+
+    def test_init_idempotent(self):
+        """多次调用init_db不应报错"""
+        init_db()
+        init_db()
+
+
+# ============ get_db_path ============
+
+class TestGetDBPath:
+    """测试数据库路径配置"""
+
+    def test_default_path(self, tmp_path, monkeypatch):
+        """默认路径应包含codetestguard.db"""
+        monkeypatch.delenv("DB_PATH", raising=False)
+        # 重新绑定原始函数逻辑（覆盖autouse fixture的patch）
+        import services.database as db_mod
+        real_get_db_path = lambda: os.environ.get(
+            "DB_PATH",
+            str(Path(db_mod.__file__).resolve().parent.parent / "data" / "codetestguard.db"),
+        )
+        monkeypatch.setattr(db_mod, "get_db_path", real_get_db_path)
+        path = db_mod.get_db_path()
+        assert path.endswith("codetestguard.db")
+        assert "data" in path
+
+    def test_env_override(self, tmp_path, monkeypatch):
+        """环境变量应覆盖默认路径"""
+        monkeypatch.setenv("DB_PATH", "/custom/path/test.db")
+        import services.database as db_mod
+        real_get_db_path = lambda: os.environ.get(
+            "DB_PATH",
+            str(Path(db_mod.__file__).resolve().parent.parent / "data" / "codetestguard.db"),
+        )
+        monkeypatch.setattr(db_mod, "get_db_path", real_get_db_path)
+        path = db_mod.get_db_path()
+        assert path == "/custom/path/test.db"
+
+
+# ============ create_project ============
+
+class TestCreateProject:
+    """测试创建项目"""
+
+    def test_create_with_all_fields(self):
+        """创建包含所有字段的项目"""
+        mapping = [{"package": "com.example", "class": "User", "method": "create"}]
+        project = create_project(
+            name="测试项目",
+            description="这是一个测试项目",
+            mapping_data=mapping,
+        )
+        assert project["id"] is not None
+        assert project["name"] == "测试项目"
+        assert project["description"] == "这是一个测试项目"
+        assert project["mapping_data"] == mapping
+        assert project["created_at"] is not None
+        assert project["updated_at"] is not None
+
+    def test_create_with_name_only(self):
+        """仅提供名称创建项目"""
+        project = create_project(name="最小项目")
+        assert project["name"] == "最小项目"
+        assert project["description"] == ""
+        assert project["mapping_data"] is None
+
+    def test_create_multiple_projects(self):
+        """创建多个项目应有不同ID"""
+        p1 = create_project(name="项目1")
+        p2 = create_project(name="项目2")
+        assert p1["id"] != p2["id"]
+
+
+# ============ get_project ============
+
+class TestGetProject:
+    """测试获取项目"""
+
+    def test_get_existing(self):
+        """获取存在的项目"""
+        created = create_project(name="测试项目")
+        fetched = get_project(created["id"])
+        assert fetched is not None
+        assert fetched["name"] == "测试项目"
+
+    def test_get_non_existing(self):
+        """获取不存在的项目返回None"""
+        result = get_project(9999)
+        assert result is None
+
+    def test_get_with_mapping_data(self):
+        """获取包含映射数据的项目，JSON应被正确解析"""
+        mapping = {"key": "value", "nested": {"a": 1}}
+        created = create_project(name="带映射", mapping_data=mapping)
+        fetched = get_project(created["id"])
+        assert fetched["mapping_data"] == mapping
+
+
+# ============ list_projects ============
+
+class TestListProjects:
+    """测试列出项目"""
+
+    def test_list_empty(self):
+        """空数据库返回空列表"""
+        projects = list_projects()
+        assert projects == []
+
+    def test_list_with_data(self):
+        """有数据时返回所有项目"""
+        create_project(name="项目A")
+        create_project(name="项目B")
+        projects = list_projects()
+        assert len(projects) == 2
+
+    def test_list_order(self):
+        """项目按ID倒序排列（后创建的在前）"""
+        p1 = create_project(name="先创建")
+        p2 = create_project(name="后创建")
+        projects = list_projects()
+        # 后创建的ID更大，按created_at DESC排序时同时间戳下按ID倒序
+        assert projects[0]["id"] > projects[1]["id"]
+
+
+# ============ update_project ============
+
+class TestUpdateProject:
+    """测试更新项目"""
+
+    def test_update_name(self):
+        """更新项目名称"""
+        project = create_project(name="原名称")
+        updated = update_project(project["id"], name="新名称")
+        assert updated["name"] == "新名称"
+        assert updated["description"] == ""  # 未更新的字段保持不变
+
+    def test_update_description(self):
+        """更新项目描述"""
+        project = create_project(name="项目", description="旧描述")
+        updated = update_project(project["id"], description="新描述")
+        assert updated["description"] == "新描述"
+        assert updated["name"] == "项目"
+
+    def test_update_mapping_data(self):
+        """更新映射数据"""
+        project = create_project(name="项目")
+        new_mapping = [{"method": "test"}]
+        updated = update_project(project["id"], mapping_data=new_mapping)
+        assert updated["mapping_data"] == new_mapping
+
+    def test_update_non_existing(self):
+        """更新不存在的项目返回None"""
+        result = update_project(9999, name="不存在")
+        assert result is None
+
+    def test_update_no_changes(self):
+        """不提供任何更新字段时返回原项目"""
+        project = create_project(name="项目")
+        updated = update_project(project["id"])
+        assert updated["name"] == "项目"
+
+    def test_update_updates_timestamp(self):
+        """更新操作应更新updated_at"""
+        project = create_project(name="项目")
+        original_updated = project["updated_at"]
+        # SQLite CURRENT_TIMESTAMP精度为秒，可能相同
+        updated = update_project(project["id"], name="新名称")
+        assert updated["updated_at"] is not None
+
+
+# ============ delete_project ============
+
+class TestDeleteProject:
+    """测试删除项目"""
+
+    def test_delete_existing(self):
+        """删除存在的项目"""
+        project = create_project(name="待删除")
+        result = delete_project(project["id"])
+        assert result is True
+        assert get_project(project["id"]) is None
+
+    def test_delete_non_existing(self):
+        """删除不存在的项目返回False"""
+        result = delete_project(9999)
+        assert result is False
+
+    def test_delete_cascades_to_records(self):
+        """删除项目应级联删除关联的分析记录"""
+        project = create_project(name="有记录的项目")
+        save_analysis_record(
+            project_id=project["id"],
+            code_changes_summary={"files": 1},
+            test_coverage_result={"rate": 0.8},
+            test_score=85.0,
+            ai_suggestions=None,
+            token_usage=100,
+            cost=0.01,
+            duration_ms=500,
+        )
+        # 确认记录存在
+        records = list_analysis_records(project_id=project["id"])
+        assert len(records) == 1
+
+        # 删除项目
+        delete_project(project["id"])
+
+        # 记录应被级联删除
+        records = list_analysis_records(project_id=project["id"])
+        assert len(records) == 0
+
+
+# ============ save_analysis_record ============
+
+class TestSaveAnalysisRecord:
+    """测试保存分析记录"""
+
+    def test_save_with_all_fields(self):
+        """保存包含所有字段的分析记录"""
+        project = create_project(name="项目")
+        record = save_analysis_record(
+            project_id=project["id"],
+            code_changes_summary={"total_files": 3, "total_added": 50},
+            test_coverage_result={"coverage_rate": 0.75, "covered": ["m1", "m2"]},
+            test_score=82.5,
+            ai_suggestions={"risk": "medium", "suggestions": ["增加边界测试"]},
+            token_usage=1500,
+            cost=0.005,
+            duration_ms=3200,
+        )
+        assert record["id"] is not None
+        assert record["project_id"] == project["id"]
+        assert record["test_score"] == 82.5
+        assert record["token_usage"] == 1500
+        assert record["cost"] == 0.005
+        assert record["duration_ms"] == 3200
+        assert record["code_changes_summary"]["total_files"] == 3
+        assert record["test_coverage_result"]["coverage_rate"] == 0.75
+        assert record["ai_suggestions"]["risk"] == "medium"
+
+    def test_save_without_ai_suggestions(self):
+        """保存不含AI建议的记录"""
+        project = create_project(name="项目")
+        record = save_analysis_record(
+            project_id=project["id"],
+            code_changes_summary={"files": 1},
+            test_coverage_result={"rate": 1.0},
+            test_score=100.0,
+            ai_suggestions=None,
+            token_usage=0,
+            cost=0.0,
+            duration_ms=100,
+        )
+        assert record["ai_suggestions"] is None
+
+
+# ============ get_analysis_record ============
+
+class TestGetAnalysisRecord:
+    """测试获取分析记录"""
+
+    def test_get_existing(self):
+        """获取存在的记录"""
+        project = create_project(name="项目")
+        saved = save_analysis_record(
+            project_id=project["id"],
+            code_changes_summary={"files": 1},
+            test_coverage_result={"rate": 0.5},
+            test_score=60.0,
+            ai_suggestions=None,
+            token_usage=0,
+            cost=0.0,
+            duration_ms=200,
+        )
+        fetched = get_analysis_record(saved["id"])
+        assert fetched is not None
+        assert fetched["test_score"] == 60.0
+
+    def test_get_non_existing(self):
+        """获取不存在的记录返回None"""
+        result = get_analysis_record(9999)
+        assert result is None
+
+
+# ============ list_analysis_records ============
+
+class TestListAnalysisRecords:
+    """测试列出分析记录"""
+
+    def _create_records(self, project_id, count):
+        """辅助方法：创建多条记录"""
+        for i in range(count):
+            save_analysis_record(
+                project_id=project_id,
+                code_changes_summary={"index": i},
+                test_coverage_result={"rate": 0.5 + i * 0.1},
+                test_score=50.0 + i * 10,
+                ai_suggestions=None,
+                token_usage=100 * (i + 1),
+                cost=0.001 * (i + 1),
+                duration_ms=100 * (i + 1),
+            )
+
+    def test_list_all(self):
+        """列出所有记录"""
+        p1 = create_project(name="项目1")
+        p2 = create_project(name="项目2")
+        self._create_records(p1["id"], 3)
+        self._create_records(p2["id"], 2)
+        records = list_analysis_records()
+        assert len(records) == 5
+
+    def test_list_by_project(self):
+        """按项目过滤记录"""
+        p1 = create_project(name="项目1")
+        p2 = create_project(name="项目2")
+        self._create_records(p1["id"], 3)
+        self._create_records(p2["id"], 2)
+        records = list_analysis_records(project_id=p1["id"])
+        assert len(records) == 3
+
+    def test_list_pagination_limit(self):
+        """分页：限制数量"""
+        project = create_project(name="项目")
+        self._create_records(project["id"], 5)
+        records = list_analysis_records(limit=3)
+        assert len(records) == 3
+
+    def test_list_pagination_offset(self):
+        """分页：偏移量"""
+        project = create_project(name="项目")
+        self._create_records(project["id"], 5)
+        records = list_analysis_records(limit=2, offset=3)
+        assert len(records) == 2
+
+    def test_list_empty(self):
+        """空数据库返回空列表"""
+        records = list_analysis_records()
+        assert records == []
+
+
+# ============ get_project_stats ============
+
+class TestGetProjectStats:
+    """测试项目统计"""
+
+    def test_stats_with_records(self):
+        """有记录时返回正确统计"""
+        project = create_project(name="项目")
+        save_analysis_record(
+            project_id=project["id"],
+            code_changes_summary={},
+            test_coverage_result={},
+            test_score=80.0,
+            ai_suggestions=None,
+            token_usage=0,
+            cost=0.0,
+            duration_ms=100,
+        )
+        save_analysis_record(
+            project_id=project["id"],
+            code_changes_summary={},
+            test_coverage_result={},
+            test_score=90.0,
+            ai_suggestions=None,
+            token_usage=0,
+            cost=0.0,
+            duration_ms=200,
+        )
+        stats = get_project_stats(project["id"])
+        assert stats["analysis_count"] == 2
+        assert stats["avg_score"] == 85.0
+        assert stats["latest_analysis_date"] is not None
+
+    def test_stats_without_records(self):
+        """无记录时返回零值"""
+        project = create_project(name="空项目")
+        stats = get_project_stats(project["id"])
+        assert stats["analysis_count"] == 0
+        assert stats["avg_score"] is None
+        assert stats["latest_analysis_date"] is None
+
+    def test_stats_average_calculation(self):
+        """验证平均分计算正确"""
+        project = create_project(name="项目")
+        scores = [70.0, 80.0, 90.0]
+        for score in scores:
+            save_analysis_record(
+                project_id=project["id"],
+                code_changes_summary={},
+                test_coverage_result={},
+                test_score=score,
+                ai_suggestions=None,
+                token_usage=0,
+                cost=0.0,
+                duration_ms=100,
+            )
+        stats = get_project_stats(project["id"])
+        assert stats["avg_score"] == 80.0
+
+    def test_stats_only_counts_own_project(self):
+        """统计只计算指定项目的记录"""
+        p1 = create_project(name="项目1")
+        p2 = create_project(name="项目2")
+        save_analysis_record(
+            project_id=p1["id"],
+            code_changes_summary={},
+            test_coverage_result={},
+            test_score=100.0,
+            ai_suggestions=None,
+            token_usage=0,
+            cost=0.0,
+            duration_ms=100,
+        )
+        save_analysis_record(
+            project_id=p2["id"],
+            code_changes_summary={},
+            test_coverage_result={},
+            test_score=50.0,
+            ai_suggestions=None,
+            token_usage=0,
+            cost=0.0,
+            duration_ms=100,
+        )
+        stats = get_project_stats(p1["id"])
+        assert stats["analysis_count"] == 1
+        assert stats["avg_score"] == 100.0

@@ -1,0 +1,26 @@
+{
+  "uncovered_methods": [
+    "com.example.user.UserService.deleteUser"
+  ],
+  "coverage_gaps": "deleteUser方法是新增方法，缺少对应的测试用例覆盖。建议补充删除用户的正向和异常测试。",
+  "suggested_test_cases": [
+    {
+      "test_id": "TC005",
+      "test_function": "删除用户-正常删除",
+      "test_steps": "1. 创建测试用户 2. 调用删除接口传入用户ID 3. 查询该用户状态",
+      "expected_result": "用户状态变为deleted，查询时显示已删除"
+    },
+    {
+      "test_id": "TC006",
+      "test_function": "删除用户-用户不存在",
+      "test_steps": "1. 使用不存在的用户ID调用删除接口 2. 检查返回错误",
+      "expected_result": "返回User not found错误提示"
+    }
+  ],
+  "risk_assessment": "medium",
+  "improvement_suggestions": [
+    "新增deleteUser方法缺少测试覆盖，存在回归风险",
+    "createUser新增了参数校验逻辑，建议补充空参数边界测试",
+    "OrderService.createOrder新增了空列表校验和总价计算，建议补充相关测试"
+  ]
+}

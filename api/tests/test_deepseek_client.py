@@ -1,0 +1,180 @@
+"""
+test_deepseek_client.py - DeepSeek API客户端测试（全部mock，不实际调用API）
+"""
+
+import json
+import os
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from services.deepseek_client import (
+    build_analysis_messages,
+    call_deepseek,
+    calculate_cost,
+    MODEL_NAME,
+    PRICING,
+)
+
+
+class TestBuildMessages:
+    """测试消息构建"""
+
+    def test_basic_messages(self):
+        messages = build_analysis_messages(
+            diff_summary="新增了createUser方法",
+            mapping_info="com.example.User.createUser -> 创建用户",
+            test_cases_text="TC001: 创建用户",
+        )
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "user"
+
+    def test_system_prompt_contains_json(self):
+        messages = build_analysis_messages("diff", "mapping", "tests")
+        assert "json" in messages[0]["content"].lower() or "JSON" in messages[0]["content"]
+
+    def test_user_prompt_contains_inputs(self):
+        messages = build_analysis_messages(
+            diff_summary="MY_DIFF",
+            mapping_info="MY_MAPPING",
+            test_cases_text="MY_TESTS",
+        )
+        assert "MY_DIFF" in messages[1]["content"]
+        assert "MY_MAPPING" in messages[1]["content"]
+        assert "MY_TESTS" in messages[1]["content"]
+
+
+class TestCalculateCost:
+    """测试成本计算"""
+
+    def test_basic_cost(self):
+        usage = {
+            "prompt_cache_hit_tokens": 100,
+            "prompt_cache_miss_tokens": 400,
+            "completion_tokens": 1500,
+            "total_tokens": 2000,
+        }
+        cost = calculate_cost(usage)
+        assert cost["total_tokens"] == 2000
+        assert cost["total_cost"] > 0
+
+        # 验证计算公式
+        expected_input = 100 / 1e6 * 0.2 + 400 / 1e6 * 2.0
+        expected_output = 1500 / 1e6 * 3.0
+        assert cost["input_cost"] == pytest.approx(expected_input, abs=1e-6)
+        assert cost["output_cost"] == pytest.approx(expected_output, abs=1e-6)
+
+    def test_zero_usage(self):
+        cost = calculate_cost({})
+        assert cost["total_cost"] == 0.0
+        assert cost["total_tokens"] == 0
+
+    def test_all_cache_hit(self):
+        usage = {
+            "prompt_cache_hit_tokens": 1000,
+            "prompt_cache_miss_tokens": 0,
+            "completion_tokens": 500,
+            "total_tokens": 1500,
+        }
+        cost = calculate_cost(usage)
+        # 全缓存命中时输入成本更低
+        expected_input = 1000 / 1e6 * 0.2
+        assert cost["input_cost"] == pytest.approx(expected_input, abs=1e-6)
+
+
+@pytest.mark.asyncio
+class TestCallDeepSeek:
+    """测试API调用（mock）"""
+
+    async def test_successful_call(self):
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = json.dumps({"result": "test"})
+        mock_response.usage.prompt_tokens = 100
+        mock_response.usage.completion_tokens = 50
+        mock_response.usage.total_tokens = 150
+        mock_response.usage.prompt_cache_hit_tokens = 50
+        mock_response.usage.prompt_cache_miss_tokens = 50
+
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        with patch("services.deepseek_client.get_client", return_value=mock_client):
+            result = await call_deepseek(
+                messages=[{"role": "user", "content": "test"}]
+            )
+
+        assert "result" in result
+        assert result["result"] == {"result": "test"}
+        assert result["usage"]["total_tokens"] == 150
+
+    async def test_empty_content_retry(self):
+        """空content应触发重试"""
+        mock_response_empty = MagicMock()
+        mock_response_empty.choices = [MagicMock()]
+        mock_response_empty.choices[0].message.content = ""
+
+        mock_response_ok = MagicMock()
+        mock_response_ok.choices = [MagicMock()]
+        mock_response_ok.choices[0].message.content = json.dumps({"ok": True})
+        mock_response_ok.usage.prompt_tokens = 100
+        mock_response_ok.usage.completion_tokens = 50
+        mock_response_ok.usage.total_tokens = 150
+        mock_response_ok.usage.prompt_cache_hit_tokens = 0
+        mock_response_ok.usage.prompt_cache_miss_tokens = 100
+
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(
+            side_effect=[mock_response_empty, mock_response_ok]
+        )
+
+        with patch("services.deepseek_client.get_client", return_value=mock_client):
+            result = await call_deepseek(
+                messages=[{"role": "user", "content": "test"}]
+            )
+
+        assert "result" in result
+        assert result["result"] == {"ok": True}
+
+    async def test_no_client(self):
+        with patch("services.deepseek_client.get_client", return_value=None):
+            result = await call_deepseek(
+                messages=[{"role": "user", "content": "test"}]
+            )
+        assert "error" in result
+
+    async def test_timeout_error(self):
+        from openai import APITimeoutError
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(
+            side_effect=APITimeoutError(request=MagicMock())
+        )
+
+        with patch("services.deepseek_client.get_client", return_value=mock_client):
+            result = await call_deepseek(
+                messages=[{"role": "user", "content": "test"}]
+            )
+        assert "error" in result
+        assert "超时" in result["error"]
+
+    async def test_rate_limit_error(self):
+        from openai import RateLimitError
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.headers = {}
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(
+            side_effect=RateLimitError(
+                message="rate limited",
+                response=mock_response,
+                body=None,
+            )
+        )
+
+        with patch("services.deepseek_client.get_client", return_value=mock_client):
+            result = await call_deepseek(
+                messages=[{"role": "user", "content": "test"}]
+            )
+        assert "error" in result
+        assert "频率" in result["error"]

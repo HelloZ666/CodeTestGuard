@@ -1,0 +1,360 @@
+"""
+test_api_integration.py - API集成测试（项目管理和分析记录路由）
+"""
+
+import json
+import os
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from fastapi.testclient import TestClient
+
+from services.database import init_db
+
+
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+
+
+@pytest.fixture(autouse=True)
+def temp_db(tmp_path, monkeypatch):
+    """为每个测试使用独立的临时数据库"""
+    db_path = str(tmp_path / "test_api.db")
+    monkeypatch.setattr("services.database.get_db_path", lambda: db_path)
+    init_db()
+    return db_path
+
+
+@pytest.fixture
+def client():
+    """创建测试客户端"""
+    from index import app
+    return TestClient(app)
+
+
+# ============ 项目CRUD ============
+
+class TestProjectCRUD:
+    """测试项目增删改查API"""
+
+    def test_create_project(self, client):
+        """创建项目"""
+        resp = client.post("/api/projects", json={"name": "测试项目", "description": "描述"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert data["data"]["name"] == "测试项目"
+        assert data["data"]["description"] == "描述"
+        assert "id" in data["data"]
+
+    def test_create_project_name_only(self, client):
+        """仅提供名称创建项目"""
+        resp = client.post("/api/projects", json={"name": "最小项目"})
+        assert resp.status_code == 200
+        assert resp.json()["data"]["description"] == ""
+
+    def test_create_project_invalid_body(self, client):
+        """缺少必填字段应返回422"""
+        resp = client.post("/api/projects", json={"description": "没有名称"})
+        assert resp.status_code == 422
+
+    def test_list_projects_empty(self, client):
+        """空数据库列出项目"""
+        resp = client.get("/api/projects")
+        assert resp.status_code == 200
+        assert resp.json()["data"] == []
+
+    def test_list_projects_with_data(self, client):
+        """有数据时列出项目"""
+        client.post("/api/projects", json={"name": "项目A"})
+        client.post("/api/projects", json={"name": "项目B"})
+        resp = client.get("/api/projects")
+        assert resp.status_code == 200
+        assert len(resp.json()["data"]) == 2
+
+    def test_get_project(self, client):
+        """获取项目详情（含统计信息）"""
+        create_resp = client.post("/api/projects", json={"name": "项目"})
+        project_id = create_resp.json()["data"]["id"]
+        resp = client.get(f"/api/projects/{project_id}")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["name"] == "项目"
+        assert "stats" in data
+        assert data["stats"]["analysis_count"] == 0
+
+    def test_get_project_not_found(self, client):
+        """获取不存在的项目返回404"""
+        resp = client.get("/api/projects/9999")
+        assert resp.status_code == 404
+
+    def test_update_project(self, client):
+        """更新项目"""
+        create_resp = client.post("/api/projects", json={"name": "原名称"})
+        project_id = create_resp.json()["data"]["id"]
+        resp = client.put(
+            f"/api/projects/{project_id}",
+            json={"name": "新名称", "description": "新描述"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["name"] == "新名称"
+        assert data["description"] == "新描述"
+
+    def test_update_project_not_found(self, client):
+        """更新不存在的项目返回404"""
+        resp = client.put("/api/projects/9999", json={"name": "不存在"})
+        assert resp.status_code == 404
+
+    def test_delete_project(self, client):
+        """删除项目"""
+        create_resp = client.post("/api/projects", json={"name": "待删除"})
+        project_id = create_resp.json()["data"]["id"]
+        resp = client.delete(f"/api/projects/{project_id}")
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+
+        # 确认已删除
+        get_resp = client.get(f"/api/projects/{project_id}")
+        assert get_resp.status_code == 404
+
+    def test_delete_project_not_found(self, client):
+        """删除不存在的项目返回404"""
+        resp = client.delete("/api/projects/9999")
+        assert resp.status_code == 404
+
+
+# ============ 映射文件上传 ============
+
+class TestProjectMapping:
+    """测试项目映射文件上传"""
+
+    def test_upload_mapping(self, client):
+        """上传映射文件到项目"""
+        create_resp = client.post("/api/projects", json={"name": "项目"})
+        project_id = create_resp.json()["data"]["id"]
+
+        mapping_content = FIXTURES_DIR / "sample_mapping.csv"
+        with open(mapping_content, "rb") as f:
+            resp = client.post(
+                f"/api/projects/{project_id}/mapping",
+                files={"mapping_file": ("mapping.csv", f, "text/csv")},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert data["mapping_count"] > 0
+
+        # 验证映射数据已保存
+        get_resp = client.get(f"/api/projects/{project_id}")
+        assert get_resp.json()["data"]["mapping_data"] is not None
+
+    def test_upload_mapping_project_not_found(self, client):
+        """上传映射到不存在的项目返回404"""
+        mapping_content = FIXTURES_DIR / "sample_mapping.csv"
+        with open(mapping_content, "rb") as f:
+            resp = client.post(
+                "/api/projects/9999/mapping",
+                files={"mapping_file": ("mapping.csv", f, "text/csv")},
+            )
+        assert resp.status_code == 404
+
+
+# ============ 分析记录 ============
+
+class TestRecords:
+    """测试分析记录API"""
+
+    def test_list_records_empty(self, client):
+        """空数据库列出记录"""
+        resp = client.get("/api/records")
+        assert resp.status_code == 200
+        assert resp.json()["data"] == []
+
+    def test_get_record_not_found(self, client):
+        """获取不存在的记录返回404"""
+        resp = client.get("/api/records/9999")
+        assert resp.status_code == 404
+
+    def test_list_records_with_project_filter(self, client):
+        """按项目过滤记录"""
+        from services.database import create_project, save_analysis_record
+
+        p1 = create_project(name="项目1")
+        p2 = create_project(name="项目2")
+        save_analysis_record(
+            project_id=p1["id"],
+            code_changes_summary={},
+            test_coverage_result={},
+            test_score=80.0,
+            ai_suggestions=None,
+            token_usage=0,
+            cost=0.0,
+            duration_ms=100,
+        )
+        save_analysis_record(
+            project_id=p2["id"],
+            code_changes_summary={},
+            test_coverage_result={},
+            test_score=90.0,
+            ai_suggestions=None,
+            token_usage=0,
+            cost=0.0,
+            duration_ms=200,
+        )
+
+        resp = client.get(f"/api/records?project_id={p1['id']}")
+        assert resp.status_code == 200
+        assert len(resp.json()["data"]) == 1
+
+
+# ============ 项目分析 ============
+
+class TestProjectAnalyze:
+    """测试基于项目上下文的分析"""
+
+    def test_analyze_project_not_found(self, client):
+        """分析不存在的项目返回404"""
+        code_file = FIXTURES_DIR / "sample_code_changes.json"
+        test_file = FIXTURES_DIR / "sample_test_cases.csv"
+        mapping_file = FIXTURES_DIR / "sample_mapping.csv"
+
+        with open(code_file, "rb") as cf, open(test_file, "rb") as tf, open(mapping_file, "rb") as mf:
+            resp = client.post(
+                "/api/projects/9999/analyze",
+                files={
+                    "code_changes": ("code.json", cf, "application/json"),
+                    "test_cases_file": ("tests.csv", tf, "text/csv"),
+                    "mapping_file": ("mapping.csv", mf, "text/csv"),
+                },
+                data={"use_ai": "false"},
+            )
+        assert resp.status_code == 404
+
+    def test_analyze_with_mapping_file(self, client):
+        """使用上传的映射文件进行项目分析（不使用AI）"""
+        # 创建项目
+        create_resp = client.post("/api/projects", json={"name": "分析项目"})
+        project_id = create_resp.json()["data"]["id"]
+
+        code_file = FIXTURES_DIR / "sample_code_changes.json"
+        test_file = FIXTURES_DIR / "sample_test_cases.csv"
+        mapping_file = FIXTURES_DIR / "sample_mapping.csv"
+
+        with open(code_file, "rb") as cf, open(test_file, "rb") as tf, open(mapping_file, "rb") as mf:
+            resp = client.post(
+                f"/api/projects/{project_id}/analyze",
+                files={
+                    "code_changes": ("code.json", cf, "application/json"),
+                    "test_cases_file": ("tests.csv", tf, "text/csv"),
+                    "mapping_file": ("mapping.csv", mf, "text/csv"),
+                },
+                data={"use_ai": "false"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert "record_id" in data["data"]
+        assert "diff_analysis" in data["data"]
+        assert "coverage" in data["data"]
+        assert "score" in data["data"]
+
+        # 验证记录已保存
+        record_id = data["data"]["record_id"]
+        record_resp = client.get(f"/api/records/{record_id}")
+        assert record_resp.status_code == 200
+
+    def test_analyze_with_stored_mapping(self, client):
+        """使用项目存储的映射数据进行分析"""
+        # 创建项目并上传映射
+        create_resp = client.post("/api/projects", json={"name": "有映射的项目"})
+        project_id = create_resp.json()["data"]["id"]
+
+        mapping_file = FIXTURES_DIR / "sample_mapping.csv"
+        with open(mapping_file, "rb") as mf:
+            client.post(
+                f"/api/projects/{project_id}/mapping",
+                files={"mapping_file": ("mapping.csv", mf, "text/csv")},
+            )
+
+        # 不提供映射文件进行分析
+        code_file = FIXTURES_DIR / "sample_code_changes.json"
+        test_file = FIXTURES_DIR / "sample_test_cases.csv"
+
+        with open(code_file, "rb") as cf, open(test_file, "rb") as tf:
+            resp = client.post(
+                f"/api/projects/{project_id}/analyze",
+                files={
+                    "code_changes": ("code.json", cf, "application/json"),
+                    "test_cases_file": ("tests.csv", tf, "text/csv"),
+                },
+                data={"use_ai": "false"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+
+    def test_analyze_no_mapping_available(self, client):
+        """项目无映射且未上传映射文件应返回400"""
+        create_resp = client.post("/api/projects", json={"name": "无映射项目"})
+        project_id = create_resp.json()["data"]["id"]
+
+        code_file = FIXTURES_DIR / "sample_code_changes.json"
+        test_file = FIXTURES_DIR / "sample_test_cases.csv"
+
+        with open(code_file, "rb") as cf, open(test_file, "rb") as tf:
+            resp = client.post(
+                f"/api/projects/{project_id}/analyze",
+                files={
+                    "code_changes": ("code.json", cf, "application/json"),
+                    "test_cases_file": ("tests.csv", tf, "text/csv"),
+                },
+                data={"use_ai": "false"},
+            )
+        assert resp.status_code == 400
+
+    def test_analyze_with_ai_mock(self, client):
+        """使用mock的AI进行项目分析"""
+        # 创建项目
+        create_resp = client.post("/api/projects", json={"name": "AI分析项目"})
+        project_id = create_resp.json()["data"]["id"]
+
+        # Mock DeepSeek
+        mock_ai_response = {
+            "result": {
+                "uncovered_methods": [],
+                "coverage_gaps": "无明显缺口",
+                "suggested_test_cases": [],
+                "risk_assessment": "low",
+                "improvement_suggestions": ["增加边界测试"],
+            },
+            "usage": {
+                "prompt_tokens": 500,
+                "completion_tokens": 200,
+                "total_tokens": 700,
+                "prompt_cache_hit_tokens": 100,
+                "prompt_cache_miss_tokens": 400,
+            },
+        }
+
+        code_file = FIXTURES_DIR / "sample_code_changes.json"
+        test_file = FIXTURES_DIR / "sample_test_cases.csv"
+        mapping_file = FIXTURES_DIR / "sample_mapping.csv"
+
+        with patch("index.call_deepseek", new_callable=AsyncMock, return_value=mock_ai_response):
+            with open(code_file, "rb") as cf, open(test_file, "rb") as tf, open(mapping_file, "rb") as mf:
+                resp = client.post(
+                    f"/api/projects/{project_id}/analyze",
+                    files={
+                        "code_changes": ("code.json", cf, "application/json"),
+                        "test_cases_file": ("tests.csv", tf, "text/csv"),
+                        "mapping_file": ("mapping.csv", mf, "text/csv"),
+                    },
+                    data={"use_ai": "true"},
+                )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert data["data"]["ai_analysis"] is not None
+        assert data["data"]["ai_cost"] is not None
+        assert "record_id" in data["data"]
