@@ -21,7 +21,7 @@ except ImportError:
 
 # 配置常量
 MAX_RETRIES = 1
-TIMEOUT_SECONDS = 30  # 本地开发30s，Vercel部署时改为8s
+TIMEOUT_SECONDS = 60  # DeepSeek API 超时时间
 DEFAULT_MAX_TOKENS = 2000
 DEFAULT_TEMPERATURE = 0.3
 MODEL_NAME = "deepseek-chat"
