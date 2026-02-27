@@ -5,12 +5,6 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
   timeout: 120000,
 });
-import type { AnalyzeResponse, Project, ProjectDetail, AnalysisRecord, AnalysisRecordSummary, ProjectAnalyzeResponse } from '../types';
-
-const api = axios.create({
-  baseURL: '/api',
-  timeout: 120000,
-});
 
 /** 健康检查 */
 export async function healthCheck(): Promise<{ status: string; version: string }> {
