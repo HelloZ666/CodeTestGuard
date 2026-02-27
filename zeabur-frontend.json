@@ -17,10 +17,7 @@
         }
       },
       "env": {
-        "VITE_API_URL": {
-          "dynamic": true,
-          "description": "API 后端地址，例如 https://your-api.zeabur.app/api"
-        }
+        "VITE_API_URL": "http://api:8000/api"
       }
     }
   }
