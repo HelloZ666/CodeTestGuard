@@ -1,0 +1,8 @@
+包名,类名,方法名,功能描述
+com.example.notification,NotificationService,sendEmail,发送邮件通知
+com.example.notification,NotificationService,sendSMS,发送短信通知
+com.example.notification,NotificationService,sendPush,发送推送通知
+com.example.notification,NotificationService,batchSend,批量发送通知
+com.example.notification,NotificationService,getNotificationStatus,查询通知状态
+com.example.notification,NotificationService,sendVerificationCode,发送验证码
+com.example.notification,NotificationService,scheduleNotification,定时发送通知

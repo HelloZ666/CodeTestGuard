@@ -1,0 +1,12 @@
+测试用例ID,测试功能,测试步骤,预期结果
+TC001,发送邮件-正常流程,1. 输入收件人、标题、内容 2. 调用sendEmail,邮件发送成功，返回消息ID
+TC002,发送邮件-无效邮箱,1. 输入无效邮箱地址 2. 调用sendEmail,抛出IllegalArgumentException异常
+TC003,发送邮件-空内容,1. 输入空内容 2. 调用sendEmail,抛出IllegalArgumentException异常
+TC004,发送短信-正常流程,1. 输入手机号和内容 2. 调用sendSMS,短信发送成功
+TC005,发送短信-格式错误,1. 输入错误格式手机号 2. 调用sendSMS,抛出IllegalArgumentException异常
+TC006,发送推送-正常流程,1. 输入用户ID和内容 2. 调用sendPush,推送发送成功
+TC007,批量发送-部分失败,1. 输入多个收件人，部分无效 2. 调用batchSend,返回成功和失败列表
+TC008,查询通知状态,1. 输入消息ID 2. 调用getNotificationStatus,返回发送状态
+TC009,发送验证码,1. 输入手机号 2. 调用sendVerificationCode,验证码发送成功，6位数字
+TC010,定时通知-未来时间,1. 输入收件人和未来时间 2. 调用scheduleNotification,定时任务创建成功
+TC011,定时通知-过去时间,1. 输入过去时间 2. 调用scheduleNotification,抛出IllegalArgumentException异常

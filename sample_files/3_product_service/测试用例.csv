@@ -1,0 +1,12 @@
+测试用例ID,测试功能,测试步骤,预期结果
+TC001,创建商品-正常流程,1. 输入商品名称、价格、库存 2. 调用createProduct,商品创建成功，返回商品ID
+TC002,创建商品-价格负数,1. 输入负数价格 2. 调用createProduct,抛出IllegalArgumentException异常
+TC003,创建商品-库存为0,1. 输入库存为0 2. 调用createProduct,商品创建成功，状态为out_of_stock
+TC004,更新商品信息,1. 输入商品ID和新价格 2. 调用updateProduct,商品信息更新成功
+TC005,删除商品,1. 输入商品ID 2. 调用deleteProduct,商品标记为已删除
+TC006,查询商品,1. 输入商品ID 2. 调用getProductById,返回商品信息
+TC007,查询商品列表,1. 设置分页参数 2. 调用listProducts,返回商品列表
+TC008,更新库存-增加,1. 输入商品ID和增加数量 2. 调用updateStock,库存增加成功
+TC009,更新库存-不足,1. 输入商品ID和大于库存的数量 2. 调用updateStock,抛出InsufficientStockException异常
+TC010,搜索商品,1. 输入关键字 2. 调用searchProducts,返回匹配的商品列表
+TC011,获取商品详情,1. 输入商品ID 2. 调用getProductDetail,返回商品详情含评价

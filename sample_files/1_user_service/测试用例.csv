@@ -1,0 +1,11 @@
+测试用例ID,测试功能,测试步骤,预期结果
+TC001,创建用户-正常流程,1. 输入合法用户名和邮箱 2. 调用createUser 3. 检查返回结果,用户创建成功，状态为active，返回用户对象
+TC002,创建用户-空用户名,1. 传入空字符串作为用户名 2. 调用createUser,抛出IllegalArgumentException异常
+TC003,创建用户-无效邮箱,1. 传入不包含@的邮箱 2. 调用createUser,抛出IllegalArgumentException异常
+TC004,更新用户信息,1. 输入已存在的用户ID 2. 修改用户名和邮箱 3. 调用updateUser,用户信息更新成功，updatedAt被设置
+TC005,删除用户,1. 输入已存在的用户ID 2. 调用deleteUser 3. 检查用户状态,用户状态变为deleted
+TC006,查询用户列表,1. 设置page=0和size=10 2. 调用listUsers,返回用户列表，分页正确
+TC007,根据ID查询用户,1. 传入已存在的用户ID 2. 调用getUserById,返回对应的用户信息
+TC008,修改密码,1. 输入用户ID和新密码 2. 调用changePassword,密码修改成功
+TC009,重置密码,1. 输入用户邮箱 2. 调用resetPassword,重置邮件已发送
+TC010,验证邮箱,1. 输入用户ID 2. 调用validateEmail,返回验证状态

@@ -1,0 +1,8 @@
+包名,类名,方法名,功能描述
+com.example.payment,PaymentService,processPayment,处理支付请求
+com.example.payment,PaymentService,refundPayment,退款处理
+com.example.payment,PaymentService,getPaymentStatus,查询支付状态
+com.example.payment,PaymentService,cancelPayment,取消待支付订单
+com.example.payment,PaymentService,verifyPayment,验证支付结果
+com.example.payment,PaymentService,createPaymentLink,创建支付链接
+com.example.payment,PaymentService,notifyPaymentSuccess,支付成功通知

@@ -1,0 +1,11 @@
+测试用例ID,测试功能,测试步骤,预期结果
+TC001,处理支付-正常流程,1. 输入订单ID和支付金额 2. 调用processPayment,支付成功，返回支付单号
+TC002,处理支付-金额为0,1. 输入订单ID和金额0 2. 调用processPayment,抛出IllegalArgumentException异常
+TC003,处理支付-余额不足,1. 输入订单ID和大于可用余额的金额 2. 调用processPayment,抛出InsufficientBalanceException异常
+TC004,退款处理,1. 输入已完成的支付ID 2. 调用refundPayment,退款成功，返回退款单号
+TC005,查询支付状态,1. 输入支付ID 2. 调用getPaymentStatus,返回支付状态（pending/success/failed）
+TC006,取消支付,1. 输入pending状态的支付ID 2. 调用cancelPayment,支付状态变为cancelled
+TC007,验证支付结果,1. 输入支付ID和签名 2. 调用verifyPayment,返回验证结果
+TC008,创建支付链接,1. 输入订单ID和金额 2. 调用createPaymentLink,返回支付URL
+TC009,支付成功通知,1. 输入支付ID 2. 调用notifyPaymentSuccess,发送通知成功
+TC010,退款-已退款订单,1. 输入已退款的支付ID 2. 调用refundPayment,抛出IllegalStateException异常

@@ -1,0 +1,9 @@
+包名,类名,方法名,功能描述
+com.example.user,UserService,createUser,创建新用户并发送欢迎邮件
+com.example.user,UserService,updateUser,更新用户基本信息
+com.example.user,UserService,deleteUser,软删除用户
+com.example.user,UserService,listUsers,分页查询用户列表
+com.example.user,UserService,getUserById,根据ID查询单个用户
+com.example.user,UserService,changePassword,修改用户密码
+com.example.user,UserService,resetPassword,重置用户密码
+com.example.user,UserService,validateEmail,验证用户邮箱
