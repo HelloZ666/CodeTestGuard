@@ -1,0 +1,27 @@
+{
+  "$schema": "https://zeabur.com/zeabur-config-schema.json",
+  "services": {
+    "frontend": {
+      "build": {
+        "cmd": ["npm", "install", "&&", "npm", "run", "build"],
+        "workdir": "."
+      },
+      "output": ["dist"],
+      "deploy": {
+        "command": ["npx", "vite", "preview", "--port", "3000", "--host"],
+        "targetPort": 3000,
+        "healthCheck": {
+          "path": "/",
+          "initialDelaySeconds": 10,
+          "periodSeconds": 5
+        }
+      },
+      "env": {
+        "VITE_API_URL": {
+          "dynamic": true,
+          "description": "API 后端地址，例如 https://your-api.zeabur.app/api"
+        }
+      }
+    }
+  }
+}
