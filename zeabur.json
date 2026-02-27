@@ -4,10 +4,10 @@
     "api": {
       "build": {
         "cmd": ["pip", "install", "-r", "requirements.txt"],
-        "workdir": "api"
+        "workdir": "."
       },
       "deploy": {
-        "command": ["python", "-m", "uvicorn", "index:app", "--host", "0.0.0.0", "--port", "8000"],
+        "command": ["sh", "-c", "cd api && PYTHONPATH=. python -m uvicorn index:app --host 0.0.0.0 --port 8000"],
         "targetPort": 8000,
         "healthCheck": {
           "path": "/api/health",
@@ -16,7 +16,6 @@
         }
       },
       "env": {
-        "PYTHONPATH": ".",
         "DEEPSEEK_API_KEY": {
           "dynamic": true,
           "description": "DeepSeek API Key"
