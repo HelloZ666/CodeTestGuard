@@ -7,7 +7,7 @@
         "workdir": "."
       },
       "deploy": {
-        "command": ["python", "-m", "uvicorn", "index:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "api"],
+        "command": ["sh", "-c", "cd api && python -m uvicorn index:app --host 0.0.0.0 --port 8000"],
         "targetPort": 8000,
         "healthCheck": {
           "path": "/api/health",
